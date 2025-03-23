@@ -1,0 +1,9 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/auto-delete?secret=${CRON_SECRET}&batchSize=10",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+
