@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer } from "recharts"
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 
 interface UserAdAnalyticsProps {
   userId: string
@@ -21,15 +22,28 @@ interface UserAdAnalyticsProps {
 
 export function UserAdAnalytics({ userId, open, onOpenChange }: UserAdAnalyticsProps) {
   const [adData, setAdData] = useState<any>(null)
+  const [historyData, setHistoryData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingHistory, setLoadingHistory] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [newStatus, setNewStatus] = useState<string>("verified")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
+  const [activeTab, setActiveTab] = useState("chart")
 
   useEffect(() => {
     if (open) {
       fetchAdData()
     }
   }, [open, userId])
+
+  // Fetch history data when page changes or when tab switches to history
+  useEffect(() => {
+    if (open && activeTab === "history") {
+      fetchHistoryData(currentPage)
+    }
+  }, [currentPage, activeTab, open, userId])
 
   async function fetchAdData() {
     try {
@@ -40,10 +54,40 @@ export function UserAdAnalytics({ userId, open, onOpenChange }: UserAdAnalyticsP
       }
       const data = await response.json()
       setAdData(data)
+
+      // Set total pages based on the total history items
+      if (data.adHistoryCount) {
+        setTotalItems(data.adHistoryCount)
+        setTotalPages(Math.ceil(data.adHistoryCount / 10))
+      }
+
+      // If we're on the history tab, fetch the first page of history
+      if (activeTab === "history") {
+        fetchHistoryData(1)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred")
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchHistoryData(page: number) {
+    try {
+      setLoadingHistory(true)
+      const response = await fetch(`/api/admin/user-ad-history?userId=${userId}&page=${page}&limit=10`)
+      if (!response.ok) {
+        throw new Error("Failed to fetch ad history")
+      }
+      const data = await response.json()
+      setHistoryData(data.history || [])
+      setTotalPages(data.totalPages || 1)
+      setTotalItems(data.totalItems || 0)
+    } catch (err) {
+      toast.error("Failed to load history data")
+      console.error(err)
+    } finally {
+      setLoadingHistory(false)
     }
   }
 
@@ -73,6 +117,18 @@ export function UserAdAnalytics({ userId, open, onOpenChange }: UserAdAnalyticsP
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An error occurred")
+    }
+  }
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage)
+  }
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value)
+    if (value === "history" && (!historyData.length || currentPage !== 1)) {
+      setCurrentPage(1)
+      fetchHistoryData(1)
     }
   }
 
@@ -147,7 +203,7 @@ export function UserAdAnalytics({ userId, open, onOpenChange }: UserAdAnalyticsP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px]">
+      <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Ad Analytics for User {userId}</DialogTitle>
           <DialogDescription>View detailed ad interaction data for this user</DialogDescription>
@@ -215,7 +271,7 @@ export function UserAdAnalytics({ userId, open, onOpenChange }: UserAdAnalyticsP
             </Card>
           </div>
 
-          <Tabs defaultValue="chart">
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="chart">Chart</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
@@ -251,52 +307,89 @@ export function UserAdAnalytics({ userId, open, onOpenChange }: UserAdAnalyticsP
               </Card>
             </TabsContent>
             <TabsContent value="history">
-              <Card>
+              <Card className="overflow-visible">
                 <CardHeader>
                   <CardTitle>Ad Interaction History</CardTitle>
                   <CardDescription>Detailed history of all ad interactions</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>View Time</TableHead>
-                        <TableHead>Click Time</TableHead>
-                        <TableHead>Verified Time</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {adData?.adHistory?.length > 0 ? (
-                        adData.adHistory.map((entry: any, index: number) => (
-                          <TableRow key={index}>
-                            <TableCell>{new Date(entry.viewTime).toLocaleDateString()}</TableCell>
-                            <TableCell>{new Date(entry.viewTime).toLocaleTimeString()}</TableCell>
-                            <TableCell>
-                              {entry.clickTime ? new Date(entry.clickTime).toLocaleTimeString() : "Not clicked"}
-                            </TableCell>
-                            <TableCell>
-                              {entry.verifiedTime ? new Date(entry.verifiedTime).toLocaleTimeString() : "Not verified"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={entry.verifiedTime ? "default" : entry.clickTime ? "secondary" : "outline"}
-                              >
-                                {entry.verifiedTime ? "Verified" : entry.clickTime ? "Clicked" : "Viewed"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center">
-                            No ad interaction history available
-                          </TableCell>
-                        </TableRow>
+                  {loadingHistory ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  ) : historyData.length > 0 ? (
+                    <>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>View Time</TableHead>
+                              <TableHead>Click Time</TableHead>
+                              <TableHead>Verified Time</TableHead>
+                              <TableHead>Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {historyData.map((entry: any, index: number) => (
+                              <TableRow key={index}>
+                                <TableCell>{new Date(entry.viewTime).toLocaleDateString()}</TableCell>
+                                <TableCell>{new Date(entry.viewTime).toLocaleTimeString()}</TableCell>
+                                <TableCell>
+                                  {entry.clickTime ? new Date(entry.clickTime).toLocaleTimeString() : "Not clicked"}
+                                </TableCell>
+                                <TableCell>
+                                  {entry.verifiedTime
+                                    ? new Date(entry.verifiedTime).toLocaleTimeString()
+                                    : "Not verified"}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={entry.verifiedTime ? "default" : entry.clickTime ? "secondary" : "outline"}
+                                  >
+                                    {entry.verifiedTime ? "Verified" : entry.clickTime ? "Clicked" : "Viewed"}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between border-t pt-4 mt-4">
+                          <div className="text-sm text-muted-foreground">
+                            Showing page {currentPage} of {totalPages} ({totalItems} total entries)
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage - 1)}
+                              disabled={currentPage === 1 || loadingHistory}
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                              <span className="sr-only">Previous Page</span>
+                            </Button>
+                            <div className="text-sm">
+                              Page {currentPage} of {totalPages}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage + 1)}
+                              disabled={currentPage === totalPages || loadingHistory}
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                              <span className="sr-only">Next Page</span>
+                            </Button>
+                          </div>
+                        </div>
                       )}
-                    </TableBody>
-                  </Table>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">No ad interaction history available</div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

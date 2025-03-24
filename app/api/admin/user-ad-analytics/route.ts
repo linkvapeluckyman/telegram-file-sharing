@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
     const { db } = await connectToDatabase()
 
-    // Get the user's ad click data
+    // Get the user's ad click record
     const adClick = await db.collection("ad_clicks").findOne({ userId })
 
     if (!adClick) {
@@ -29,7 +29,16 @@ export async function GET(request: Request) {
         totalViews: 0,
         status: "none",
         adHistory: [],
+        adHistoryCount: 0,
       })
+    }
+
+    // Get a sample of the history for the chart (most recent 20 entries)
+    let sampleHistory = adClick.adHistory || []
+    if (sampleHistory.length > 20) {
+      sampleHistory = sampleHistory
+        .sort((a: any, b: any) => new Date(b.viewTime).getTime() - new Date(a.viewTime).getTime())
+        .slice(0, 20)
     }
 
     // Prepare the response data
@@ -42,7 +51,8 @@ export async function GET(request: Request) {
       clickAttempt: adClick.clickAttempt,
       status: adClick.status || "none",
       fileParam: adClick.fileParam,
-      adHistory: adClick.adHistory || [],
+      adHistory: sampleHistory,
+      adHistoryCount: adClick.adHistory ? adClick.adHistory.length : 0,
     }
 
     return NextResponse.json(responseData)

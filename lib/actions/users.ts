@@ -46,7 +46,9 @@ export async function getUsers() {
   }
 }
 
-export async function getUserDetails(userId: string) {
+// Make sure the getUserDetails function is correctly limiting to 10 items per page
+// The function already looks correct, but let's double-check the limit parameter
+export async function getUserDetails(userId: string, page = 1, limit = 10) {
   try {
     const { db } = await connectToDatabase()
 
@@ -60,13 +62,21 @@ export async function getUserDetails(userId: string) {
     // Check if user is banned
     const bannedUser = await db.collection("banned_users").findOne({ userId })
 
-    // Get user's file access history
+    // Calculate skip for pagination
+    const skip = (page - 1) * limit
+
+    // Get user's file access history with pagination
     const accessHistory = await db
       .collection("file_access")
       .find({ userId })
       .sort({ accessedAt: -1 })
-      .limit(10)
+      .skip(skip)
+      .limit(limit)
       .toArray()
+
+    // Get total count for pagination
+    const totalAccessCount = await db.collection("file_access").countDocuments({ userId })
+    const totalPages = Math.ceil(totalAccessCount / limit)
 
     return {
       success: true,
@@ -86,6 +96,11 @@ export async function getUserDetails(userId: string) {
           fileName: history.fileName,
           accessedAt: history.accessedAt.toISOString(),
         })),
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems: totalAccessCount,
+        },
       },
     }
   } catch (error) {
